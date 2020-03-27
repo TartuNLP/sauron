@@ -5,7 +5,7 @@ import socket
 import json
 import sys
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect, url_for
 from multiprocessing import Process, Manager, Queue, log_to_stderr, current_process, cpu_count
 from threading import Thread, Lock
 from configparser import ConfigParser
@@ -22,23 +22,27 @@ def handle_invalid_usage(error):
     response.status_code = error.status_code
     return response
 
-@app.route("/", methods=['POST', 'GET'])
+@app.route('/')
+def hello_():
+    return redirect("/v1.2")
+
+@app.route("/v1.2", methods=['GET'])
 def hello():
     return "<h1 style='color:blue'>Translation API</h1>"
 
-@app.route('/translateconf', methods=['POST', 'GET'])
+@app.route('/v1.2/translate/support', methods=['POST', 'GET'])
 def check_options():
     auth = request.args.get('auth')
     if auth in parser.options('token2domain'):
         domain = parser.get('token2domain', auth)
         for name, c in connections.items():
             if name.startswith(domain):
-                return jsonify(c.options)
-
+                std_fmt = [{"odomain" : option, "lang" : c.options[option]} for option in c.options]
+                return jsonify({"domain": c.name.split('_')[0], "options" : std_fmt})
     else:
         raise Error(f'Authentication is missing or failed', status_code=400)
 
-@app.route('/translate', methods=['POST', 'GET'])
+@app.route('/v1.2/translate', methods=['POST', 'GET'])
 def post_job():
     querry = dict(zip(params, map(request.args.get, params)))
     try:
@@ -55,7 +59,7 @@ def post_job():
     if body:
         pass
     else:
-        if 'text' not in querry.keys():
+        if not querry['text']:
             raise Error('No text provided for translation')
         body = querry['text']
 
@@ -75,7 +79,7 @@ def post_job():
             if querry['odomain'] not in c.options:
                 available_styles = list(c.options)
                 querry['odomain'] = available_styles[0]
-            if querry['olang'] not in c.options[querry['odomain']].values():
+            if querry['olang'] not in c.options[querry['odomain']]: #.values():
                 raise Error(f'Language is not supported', status_code=400)
             if c.connected:
                 available_servers = True
@@ -122,7 +126,7 @@ class Worker(Process):
         prod = []
         for k,v in output_options.items():
             langs = v.split(',')
-            self.options[k] = {i:l for i, l in enumerate(langs)}
+            self.options[k] = [l for l in langs]
             prod.extend(product([k],langs))
 
         for pair in prod:
@@ -154,6 +158,7 @@ class Worker(Process):
         while True:
             with requests as r:
                 olang, ostyle = params_str.split('_')
+                olang = lang_code_mapping(olang)
                 text = r['text']
                 msg = {"src": text, "conf": "{},{}".format(olang, ostyle)}
                 jmsg = bytes(json.dumps(msg), 'ascii')
@@ -237,6 +242,7 @@ class Worker(Process):
 if __name__ == '__main__':
 
     app.url_map.converters['uuid'] = UUIDConverter
+    app.config['JSON_SORT_KEYS'] = False
     logger = log_to_stderr()
     logger.setLevel(logging.INFO)
     logging.basicConfig(
@@ -247,6 +253,7 @@ if __name__ == '__main__':
     parser = ConfigParser()
     parser.read('dev.ini')
     params = ['text', 'auth','olang','odomain']
+    lang_code_mapping = { 'est': 'et', 'lav': ' lv', 'eng': 'en', 'rus': 'ru', 'fin': 'fi', 'lit': 'lt', 'ger': 'de' }
 
     with open('./config.json') as config_file:
         config = json.load(config_file)
@@ -272,4 +279,3 @@ if __name__ == '__main__':
 
 
     app.run()
-
