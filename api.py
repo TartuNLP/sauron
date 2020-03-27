@@ -10,6 +10,7 @@ from multiprocessing import Process, Manager, Queue, log_to_stderr, current_proc
 from threading import Thread, Lock
 from configparser import ConfigParser
 from itertools import product
+from copy import copy
 
 from helpers import UUIDConverter, ThreadSafeDict, Error
 from helpers import tokenize, is_json
@@ -37,7 +38,9 @@ def check_options():
         domain = parser.get('token2domain', auth)
         for name, c in connections.items():
             if name.startswith(domain):
-                std_fmt = [{"odomain" : option, "lang" : c.options[option]} for option in c.options]
+                std_fmt = [{"odomain" : option,
+                            "name" : odomain_code_mapping[option],
+                            "lang" : c.options[option],} for option in c.options]
                 return jsonify({"domain": c.name.split('_')[0], "options" : std_fmt})
     else:
         raise Error(f'Authentication is missing or failed', status_code=400)
@@ -87,7 +90,11 @@ def post_job():
     if not available_servers:
         raise Error(f'Server for {domain} domain is not connected', status_code=503)
 
-    sentences = tokenize(body)
+    if type(body) == str:
+        sentences = tokenize(body)
+    else:
+        sentences = copy(body)
+
     n_sentences = len(sentences)
     params_str = '{}_{}'.format(querry['olang'], querry['odomain'])
     job_id = uuid.uuid1()
@@ -253,6 +260,7 @@ if __name__ == '__main__':
     parser = ConfigParser()
     parser.read('dev.ini')
     params = ['text', 'auth','olang','odomain']
+    odomain_code_mapping = {'fml': 'Formal','inf':'Infromal','auto':'Auto'}
     lang_code_mapping = { 'est': 'et', 'lav': ' lv', 'eng': 'en', 'rus': 'ru', 'fin': 'fi', 'lit': 'lt', 'ger': 'de' }
 
     with open('./config.json') as config_file:
