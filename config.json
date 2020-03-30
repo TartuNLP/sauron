@@ -1,0 +1,63 @@
+{
+  "domains": [
+    {
+      "name" : "domain1",
+      "Workers" : [
+        {
+          "name": "worker1",
+          "settings":
+            {
+              "host": "hostname",
+              "port": 12345
+            }
+        },
+        {
+          "name": "worker2",
+          "settings":
+            {
+              "host": "hostname",
+              "port": 12346
+            }
+        }
+      ],
+      "output_options" :
+        {
+          "fml": "est,lav,lit,ger,eng,fin,rus",
+          "inf": "est,lav,lit,ger,eng,fin,rus",
+          "auto": "est,lav,lit,ger,eng,fin,rus"
+        }
+    },
+    {
+      "name" : "domain2",
+      "Workers" : [
+        {
+          "name" : "worker1",
+          "settings":
+            {
+              "host": "hostname",
+              "port": 12347
+            }
+        }
+      ],
+      "output_options" : {
+        "tt": "ger,est,lav,lit"
+      }
+    },
+    {
+      "name" : "domain3",
+      "Workers": [
+        {
+          "name": "worker1",
+          "settings":
+            {
+              "host" : "hostname",
+              "port" : 12349
+            }
+        }
+      ],
+      "output_options" : {
+        "cr": "ger,eng,est,lav"
+      }
+    }
+  ]
+}
