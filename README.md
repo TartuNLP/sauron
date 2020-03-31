@@ -32,9 +32,9 @@ RESPONSE (JSON):
     }
 
 
-##### Translation (multiple sentences):
+#### Translation (multiple sentences):
 
-POST https://translate.cloud.ut.ee/v1.2/translate?auth=public&olang=eng&odomain=auto
+POST https://translate.cloud.ut.ee/v1.2/translate?auth=public&olang=eng&odomain=auto  
 BODY (JSON):
 
         {
@@ -51,7 +51,7 @@ RESPONSE (JSON):
         }
 
 
-##### Get help on domain settings:  
+#### Get help on domain settings:  
 
 GET/ POST http://translate.cloud.ut.ee/v1.2/translate/support?auth=public
 
@@ -69,5 +69,5 @@ GET/ POST http://translate.cloud.ut.ee/v1.2/translate/support?auth=public
  `> set FLASK_APP=api`  
 `> flask run`
  
-Check official [Flask](https://flask.palletsprojects.com/en/1.1.x/deploying/) documentation for deployment options.
+
  
