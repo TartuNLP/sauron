@@ -34,7 +34,7 @@ POST https://translate.cloud.ut.ee/v1.2/translate?auth=public&olang=eng&odomain=
 BODY (JSON):
 
         {
-           "sentences":["Tere", "Nägemist"]
+           "text":["Tere", "Nägemist"]
         }
 
 
