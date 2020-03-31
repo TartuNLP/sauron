@@ -57,7 +57,7 @@ GET/ POST http://translate.cloud.ut.ee/v1.2/translate/support?auth=public
 
 #### Configuration:
 
- API requires configuration files for execution. Examples of __config.json__ and __dev.ini__ are provided in this repo.  
+ API requires configuration files for execution. Examples of __config.json__ and __dev.ini__ are provided in this repository.  
   
  Running from command line: 
  
