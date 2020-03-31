@@ -1,10 +1,6 @@
 # sauron
 Open-source Neural MT server API
 
-### Requirements:
-
-`pip3 install flask nltk`
-
 ### Usage:
 
 Request parameters :
@@ -54,6 +50,10 @@ RESPONSE (JSON):
 #### Get help on domain settings:  
 
 GET/ POST http://translate.cloud.ut.ee/v1.2/translate/support?auth=public
+
+#### Requirements:
+
+`pip3 install flask nltk`
 
 #### Configuration:
 
