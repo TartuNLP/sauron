@@ -55,7 +55,10 @@ GET/ POST http://translate.cloud.ut.ee/v1.2/translate/support?auth=public
 {"domain":"general","options":[{"odomain":"fml","name":"Formal","lang":["est","lav","lit","ger","eng","fin","rus"]},{"odomain":"inf","name":"Informal","lang":["est","lav","lit","ger","eng","fin","rus"]},{"odomain":"auto","name":"Auto","lang":["est","lav","lit","ger","eng","fin","rus"]}]}
 ```
 
-You may also receieve a message. For example when incorrect usage is found:
+You may also receieve a message. For example when incorrect usage is found:  
+
+POST http://translate.cloud.ut.ee/v1.2/translate?auth=public
+
 ```json
 {
     "message": "olang not found in request"
