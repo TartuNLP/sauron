@@ -106,7 +106,7 @@ def post_job():
     if not available_servers:
         raise Error(f'Server for {domain} domain is not connected', status_code=503,
                     payload={'status': 'done', 'input': body})
-    body = ''.join(c for c in body if c not in '|')
+    # body = ''.join(c for c in body if c not in '|')
     if t in ['src', 'text', 'raw']:
         sentences = sent_tokenize(body)
     else:
@@ -191,28 +191,31 @@ class Worker(Process):
             with self.lock:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(20)
-                sock.connect((self.host, self.port))
-                sock.sendall(b'HI')
-                preresponse = sock.recv(5)
-                if preresponse == b'okay':
-                    sock.sendall(jmsg)
-                    try:
+                try:
+                    sock.connect((self.host, self.port))
+                    sock.sendall(b'HI')
+                    preresponse = sock.recv(5)
+                    if preresponse == b'okay':
+                        sock.sendall(jmsg)
                         rawresponse = sock.recv(65536)
-                    except TimeoutError:
-                        return tokenize(text)
-                    if rawresponse.startswith(b"msize:"):
-                        inMsgSize = int(rawresponse.strip().split(b":")[1])
-                        sock.send(b'OK')
-                        rawresponse = sock.recv(inMsgSize + 13)
-                    try:
-                        response = json.loads(rawresponse)
-                    except json.decoder.JSONDecodeError as e:
-                        logging.debug('Received broken json', e)
-                        logging.debug(rawresponse)
-                        return tokenize(text)
-                    responses = tokenize(response['final_trans'])
+                        if rawresponse.startswith(b"msize:"):
+                            inMsgSize = int(rawresponse.strip().split(b":")[1])
+                            sock.send(b'OK')
+                            rawresponse = sock.recv(inMsgSize + 13)
+                        try:
+                            response = json.loads(rawresponse)
+                        except json.decoder.JSONDecodeError as e:
+                            logging.debug('Received broken json', e)
+                            logging.debug(rawresponse)
+                            return tokenize(text)
+                        responses = tokenize(response['final_trans'])
+                        return responses
+                    else:
+                        return(tokenize(text))
+                except (ConnectionRefusedError, TimeoutError):
+                    return(tokenize(text))
+                finally:
                     sock.close()
-                    return responses
 
     def translate(self, params_str, requests):
         olang, ostyle = params_str.split('_')
@@ -274,14 +277,21 @@ class Worker(Process):
 
             except ConnectionRefusedError:
                 self.connected = False
-                logging.debug(f'Connection to {p.name} refused')
+                logging.info(f'Connection to {p.name} refused')
                 if not check_every:
                     break
                 time.sleep(check_every)
 
             except TimeoutError:
                 self.connected = False
-                logging.debug(f'Connection to {p.name} timeout')
+                logging.info(f'Connection to {p.name} timeout')
+                if not check_every:
+                    break
+                time.sleep(check_every)
+
+            except Exception as e:
+                self.connected = False
+                logging.info(e)
                 if not check_every:
                     break
                 time.sleep(check_every)
@@ -294,7 +304,7 @@ class Worker(Process):
         logging.debug(f'Name of spawned process: {p.name}')
         logging.debug(f'ID of spawned process: {p.pid}')
         sys.stdout.flush()
-        self.check_connection()
+        self.check_connection(3600)
         if self.connected:
             t1 = Thread(name='Consumer', target=self.consume_queue)
             t2 = list()
@@ -314,6 +324,7 @@ if __name__ == '__main__':
     app.url_map.converters['uuid'] = UUIDConverter
     app.config['JSON_SORT_KEYS'] = False
     logger = log_to_stderr()
+    logger.setLevel(logging.INFO)
     logging.basicConfig(
         level=logging.INFO,
         format='[%(levelname)s](%(threadName)-10s)%(message)s',
