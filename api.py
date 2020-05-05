@@ -371,4 +371,4 @@ if __name__ == '__main__':
                 status[name] = False
                 w.start()
 
-    app.run(host = 'translate.cloud.ut.ee', port = 80, use_reloader = False)
+    app.run()
