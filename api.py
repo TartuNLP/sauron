@@ -6,6 +6,7 @@ import json
 import sys
 import random
 import ctypes
+import traceback
 
 from flask import Flask, request, jsonify, redirect, url_for
 from nltk import sent_tokenize
@@ -99,17 +100,24 @@ def post_job():
             if querry['odomain'] not in c.options:
                 available_styles = list(c.options)
                 querry['odomain'] = available_styles[0]
-            if querry['olang'] not in c.options[querry['odomain']]:
-                raise Error(f'Language is not supported', status_code=400)
+            options = c.options[querry['odomain']]
+            if querry['olang'] not in options:
+                reverse_lang_mapping = {v: k for k, v in lang_code_mapping.items()}
+                if querry['olang'] not in [lang_code_mapping[lang] for lang in options]:
+                    raise Error(f'Language is not supported', status_code=400)
+                querry['olang'] = reverse_lang_mapping[querry['olang']]
+
             if status[name]:
                 available_servers = True
-    if not available_servers:
-        raise Error(f'Server for {domain} domain is not connected', status_code=503,
-                    payload={'status': 'done', 'input': body})
-    # body = ''.join(c for c in body if c not in '|')
+    # if not available_servers:
+    #     raise Error(f'Server for {domain} domain is not connected', status_code=503,
+    #                 payload={'status': 'done', 'input': body})
+    delete_symbol = lambda body: ''.join(c for c in body if c not in '|')
     if t in ['src', 'text', 'raw']:
+        body = delete_symbol(body)
         sentences = sent_tokenize(body)
     else:
+        body = map(delete_symbol, body)
         sentences = body
     n_sentences = len(sentences)
     params_str = '{}_{}'.format(querry['olang'], querry['odomain'])
@@ -120,6 +128,7 @@ def post_job():
         RESULTS[job_id]['n_sen'] = n_sentences
         RESULTS[job_id]['status'] = 'posted'
         RESULTS[job_id]['text'] = ''
+        RESULTS[job_id]['type'] = t
         q[domain].put((job_id, params_str, sentences))
         logging.debug(f'Job with id {job_id} POSTED to the {domain} queue')
         logging.debug(f'{q[domain].qsize()} jobs in the {domain} queue')
@@ -127,6 +136,8 @@ def post_job():
     while True:
         if job_id in RESULTS:
             if RESULTS[job_id]['status'] == 'done':
+                if RESULTS[job_id]['type'] == 'sentences':
+                    return jsonify({'status': 'done', 'input': body, 'result': sent_tokenize(RESULTS[job_id]['text'])})
                 return jsonify({'status': 'done', 'input': body, 'result': RESULTS[job_id]['text']})
             if RESULTS[job_id]['status'] == 'fail':
                 return jsonify({'status': 'fail', 'input': body, 'result': RESULTS[job_id]['text']})
@@ -139,7 +150,6 @@ class Worker(Process):
         self.name = name
         self.daemon = True
         self.connected = False
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.queue = request_queue
         self.host = host
         self.port = port
@@ -174,7 +184,7 @@ class Worker(Process):
                         for sentence in src:
                             while True:
                                 if r[params_str]['n_sentences'] <= batch_size:
-                                    r[params_str]['text'] += sentence + '|'  # Add text by sentences
+                                    r[params_str]['text'] += sentence + ' | '  # Add text by sentences
                                     r[params_str]['n_sentences'] += 1
                                     r[params_str]['job_ids'].put(job_id)  # Add id by sentence
                                     break
@@ -230,6 +240,7 @@ class Worker(Process):
 
                         # Translation actually happens here
                         responses = self.send_request(text, olang, ostyle)
+                        logging.debug(responses)
                         # responses = sent_tokenize(text)
 
                         # Now response contains bunch of translations
@@ -258,6 +269,7 @@ class Worker(Process):
         p = current_process()
         while True:
             try:
+                self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.socket.connect((self.host, self.port))
                 self.socket.sendall(b'HI')
                 preresponse = self.socket.recv(5)
@@ -291,7 +303,7 @@ class Worker(Process):
 
             except Exception as e:
                 self.connected = False
-                logging.info(e)
+                logging.info(traceback.format_exc())
                 if not check_every:
                     break
                 time.sleep(check_every)
@@ -304,7 +316,7 @@ class Worker(Process):
         logging.debug(f'Name of spawned process: {p.name}')
         logging.debug(f'ID of spawned process: {p.pid}')
         sys.stdout.flush()
-        self.check_connection(3600)
+        self.check_connection()
         if self.connected:
             t1 = Thread(name='Consumer', target=self.consume_queue)
             t2 = list()
@@ -359,4 +371,4 @@ if __name__ == '__main__':
                 status[name] = False
                 w.start()
 
-    app.run(host='translate.cloud.ut.ee', port=80, use_reloader=False)
+    app.run(host = 'translate.cloud.ut.ee', port = 80, use_reloader = False)
