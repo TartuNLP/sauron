@@ -117,7 +117,7 @@ def post_job():
         body = delete_symbol(body)
         sentences = sent_tokenize(body)
     else:
-        body = map(delete_symbol, body)
+        body = list(map(delete_symbol, body))
         sentences = body
     n_sentences = len(sentences)
     params_str = '{}_{}'.format(querry['olang'], querry['odomain'])
@@ -218,7 +218,12 @@ class Worker(Process):
                             logging.debug('Received broken json', e)
                             logging.debug(rawresponse)
                             return tokenize(text)
-                        responses = tokenize(response['final_trans'])
+                        try:
+                            responses = tokenize(response['final_trans'])
+                        except KeyError:
+                            logging.debug('Response does not contain translation')
+                            logging.debug(response)
+                            return tokenize(text)
                         return responses
                     else:
                         return(tokenize(text))
@@ -371,4 +376,4 @@ if __name__ == '__main__':
                 status[name] = False
                 w.start()
 
-    app.run()
+    app.run(host = 'translate.cloud.ut.ee', port = 80, use_reloader = False)
