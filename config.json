@@ -1,14 +1,22 @@
 {
   "domains": [
     {
-      "name" : "general",
+      "name" : "domain1",
       "Workers" : [
         {
           "name": "worker1",
           "settings":
             {
-              "host": "172.17.66.215",
-              "port": 12346
+              "host": "hostname",
+              "port": 11111
+            }
+        },
+        {
+          "name": "worker2",
+          "settings":
+            {
+              "host": "hostname",
+              "port": 11112
             }
         }
       ],
@@ -20,14 +28,14 @@
         }
     },
     {
-      "name" : "Technica Translations",
+      "name" : "domain2",
       "Workers" : [
         {
           "name" : "worker1",
           "settings":
             {
-              "host": "172.17.66.215",
-              "port": 12347
+              "host": "hostname",
+              "port": 11113
             }
         }
       ],
@@ -36,14 +44,14 @@
       }
     },
     {
-      "name" : "Interlex",
+      "name" : "domain3",
       "Workers": [
         {
           "name": "worker1",
           "settings":
             {
-              "host" : "172.17.66.215",
-              "port" : 12349
+              "host" : "hostname",
+              "port" : 11114
             }
         }
       ],
