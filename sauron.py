@@ -434,7 +434,7 @@ class Worker(Process):
 
     @staticmethod
     def save_result(responses: tuple, itr: iter) -> None:
-        """Put translated text into result's global object.
+        """Put translated text into result.
 
         Args:
             responses: Tuple contains server response
