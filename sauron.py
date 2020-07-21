@@ -81,23 +81,7 @@ def check_options():
     Returns:
         JSON: contains domain name,
         languages and output domain provided for the translation
-
-        Example:
-            {
-              "domain": "{DOMAIN_NAME}",
-              "options": [
-                {
-                  "odomain": "{OUTPUT_DOMAIN_CODE}",
-                  "name": "{OUTPUT_DOMAIN_NAME}",
-                  "lang": [
-                    "{LANG_1}",
-                    "{LANG_2}",
-                    "{LANG_3}"
-                  ]
-                }
-              ]
-            }
-
+        
     Raises:
         [400] Authentication error
     """
@@ -128,20 +112,7 @@ def post_job():
     Returns:
         JSON: Contains response status, input text,
         result or error message.
-
-        Example:
-            {
-                "status": "done",
-                "input": [
-                    "Hello",
-                    "World!"
-                ],
-                "result": [
-                    "Tere.",
-                    "Maailm!"
-                ]
-            }
-
+        
     Raises:
         [400] Authentication error
         [400] Obligatory parameter not in request error
