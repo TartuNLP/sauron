@@ -60,7 +60,7 @@ def handle_invalid_usage(error):
 
 @app.route("/v1.2", methods=['GET'])
 def hello():
-    return "<h1 style='color:blue'>Translation API</h1>"
+    return "<h1 style='color:blue'>UT Translate API v1.2</h1>"
 
 
 @app.route('/')
@@ -83,7 +83,7 @@ def check_options():
         languages and output domain provided for the translation
         
     Raises:
-        [400] Authentication error
+        [401] Authentication error
     """
 
     auth = request.args.get('auth')
@@ -96,7 +96,7 @@ def check_options():
                             "lang": c.options[option]} for option in c.options]
                 return jsonify({"domain": c.name.split('_')[0], "options": std_fmt})
     else:
-        raise Error(f'Authentication is missing or failed', payload={'status': 'fail'}, status_code=400)
+        raise Error(f'Authentication is missing or failed', payload={'status': 'fail'}, status_code=401)
 
 
 @app.route('/v1.2/translate', methods=['POST', 'GET'])
@@ -114,12 +114,12 @@ def post_job():
         result or error message.
         
     Raises:
-        [400] Authentication error
         [400] Obligatory parameter not in request error
         [400] Text is not included error
         [400] Language is not supported error
         [400] utf-8 decoding error
         [400] 'text' field skipped in input JSON error
+        [401] Authentication error
         [503] Server in not available error
 
     """
@@ -136,7 +136,7 @@ def post_job():
     if querry['auth'] in parser.options('token2domain'):
         domain = parser.get('token2domain', querry['auth'])
     else:
-        raise Error(f'Authentication failed', payload={'status': 'fail'}, status_code=400)
+        raise Error(f'Authentication failed', payload={'status': 'fail'}, status_code=401)
 
     for k, v in querry.items():
         # Optional params can be omitted
@@ -202,6 +202,7 @@ def post_job():
     # to avoid further conflicts with tokenizer
     delete_symbol = lambda body: ''.join(c for c in body if c not in '|')
 
+
     # Delete depends on input type
     if t in ['src', 'text', 'raw']:
         body = delete_symbol(body)
@@ -210,9 +211,19 @@ def post_job():
         body = list(map(delete_symbol, body))
         sentences = body
 
+
     n_sentences = len(sentences)
     params_str = '{}_{}'.format(querry['olang'], querry['odomain'])
     job_id = uuid.uuid1()
+
+
+    if not sentences:
+        return jsonify({'status': 'done', 'input': body,
+                        'result': body})
+    if not sum([True for s in sentences if s.strip()]):
+        return jsonify({'status': 'done', 'input': body,
+                        'result': sentences})
+
 
     # Pass parameters further to the queue manager
     with queues_per_domain as q:
@@ -220,6 +231,7 @@ def post_job():
         RESULTS[job_id]['n_sen'] = n_sentences
         RESULTS[job_id]['status'] = 'posted'
         RESULTS[job_id]['text'] = ''
+        RESULTS[job_id]['segments'] = manager.list()
         RESULTS[job_id]['type'] = t
         q[domain].put((job_id, params_str, sentences))
         app.logger.debug(f'Job with id {job_id} POSTED to the {domain} queue')
@@ -231,7 +243,7 @@ def post_job():
             if RESULTS[job_id]['status'] == 'done':
                 if RESULTS[job_id]['type'] == 'sentences':
                     response = jsonify({'status': 'done', 'input': body,
-                                        'result': sent_tokenize(RESULTS[job_id]['text'])})
+                                        'result': list(RESULTS[job_id]['segments'])})
                     return response
                 response = jsonify({'status': 'done', 'input': body, 'result': RESULTS[job_id]['text']})
                 return response
@@ -325,7 +337,10 @@ class Worker(Process):
                                 self.c.wait()
                             self.ready = False
                             # Extend given text with a new sentence and sep token
-                            r[params_str]['text'] += sentence + '|'
+                            if sentence.strip():
+                                r[params_str]['text'] += sentence + '|'
+                            else:
+                                r[params_str]['text'] += ' |'
                             # Keep number of sentences in the buffer
                             r[params_str]['n_sentences'] += 1
                             # And their job ids
@@ -356,9 +371,9 @@ class Worker(Process):
             Tuple containing response with the translation or an error.
             Type of first element is rather str or bool respectively.
         """
-
         msg = {"src": text.strip('|'), "conf": "{},{}".format(olang, odomain)}
         jmsg = bytes(json.dumps(msg), 'ascii')
+
         if self.connected:
             with self.lock:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -366,33 +381,34 @@ class Worker(Process):
                     sock.connect((self.host, self.port))
                     sock.sendall(b'HI')
                     preresponse = sock.recv(5)
-                    if preresponse == b'okay':
-                        sock.sendall(jmsg)
-                        rawresponse = sock.recv(65536)
-                        if rawresponse.startswith(b"msize:"):
-                            in_msg_size = int(rawresponse.strip().split(b":")[1])
-                            sock.sendall(b'OK')
-                            rawresponse = sock.recv(in_msg_size + 13)
-                        try:
-                            response = json.loads(rawresponse)
-                        except json.decoder.JSONDecodeError as e:
-                            app.logger.debug('Received broken json', e)
-                            app.logger.debug(rawresponse)
-                            return False, f'Can not decode server raw response : {response}'
-                        try:
-                            translation = response['final_trans']
-                        except KeyError:
-                            app.logger.debug('Response does not contain translation')
-                            app.logger.debug(response)
-                            return False, f'Server response: {response}'
-                        responses = tokenize(translation)
-                        return responses
-                    else:
-                        return False, 'Server is not polite'
+                    assert preresponse == b'okay'
+                    sock.sendall(bytes("msize:" + str(len(jmsg) + 13), 'ascii'))
+                    politeness = sock.recv(11)
+                    assert politeness == b'still okay'
+                    sock.sendall(jmsg)
+                    rawresponse = sock.recv(2048)
+                    if rawresponse.startswith(b"msize:"):
+                        in_msg_size = int(rawresponse.strip().split(b":")[1])
+                        sock.sendall(b'OK')
+                        rawresponse = sock.recv(in_msg_size + 13)
+                    try:
+                        response = json.loads(rawresponse)
+                    except json.decoder.JSONDecodeError as e:
+                        app.logger.debug('Received broken json', e)
+                        app.logger.debug(rawresponse)
+                        return False, f'Can not decode server raw response : {response}'
+                    try:
+                        translation = response['final_trans']
+                    except KeyError:
+                        app.logger.debug('Response does not contain translation')
+                        app.logger.debug(response)
+                        return False, f'Server response: {response}'
+                    responses = tokenize(translation)
+                    return responses
                 except Exception:
                     return False, traceback.format_exc()
                 finally:
-                    sock.close()
+                    sock.close() # return tuple?
 
     def translate(self, params_str: str, requests: ThreadSafeDict) -> None:
         """Continuously get translation for the text from the allocated buffer.
@@ -444,6 +460,7 @@ class Worker(Process):
             None
         """
 
+
         for i, j in enumerate(itr):
             if type(responses[0]) is bool:
                 RESULTS[j]['message'] = responses[1:]
@@ -451,12 +468,12 @@ class Worker(Process):
             else:
                 try:
                     RESULTS[j]['text'] += responses[i] + ' '
+                    RESULTS[j]['segments'].append(responses[i])
                 except IndexError:
                     trace = traceback.format_exc()
                     app.logger.error(trace)
                     RESULTS[j]['status'] = 'fail'
-                length = len(sent_tokenize(RESULTS[j]['text']))
-                if RESULTS[j]['n_sen'] <= length:
+                if RESULTS[j]['n_sen'] <= len(RESULTS[j]['segments']):
                     RESULTS[j]['status'] = 'done'
 
     def check_connection(self, check_every: int = None) -> None:
@@ -487,7 +504,7 @@ class Worker(Process):
                         msg = {"src": 'check', "conf": "{},{}".format(olang[0], odomain)}
                         jmsg = bytes(json.dumps(msg), 'ascii')
                         self.socket.sendall(jmsg)
-                        self.socket.recv(65536)
+                        self.socket.recv(64)
                         break
                     else:
                         app.logger.debug(preresponse)
@@ -529,7 +546,7 @@ class Worker(Process):
         app.logger.debug(f'Name of spawned process: {p.name}')
         app.logger.debug(f'ID of spawned process: {p.pid}')
         sys.stdout.flush()
-        self.check_connection(3600)
+        self.check_connection(300)
         if self.connected:
             t1 = Thread(name='Consumer', target=self.produce_queue)
             t2 = list()
@@ -566,14 +583,14 @@ odomain_code_mapping = {'fml': 'Formal',
                         'auto': 'Auto',
                         'tt': 'tt',
                         'cr': 'cr',
-                        'ep': 'Formal',
+                        'ep': 'European Parliament',
                         'os': 'Informal',
                         'pc': 'Auto',
                         'dg': 'dg',
-                        'jr': 'jr',
-                        'em': 'em',
+                        'jr': 'Legal',
+                        'em': 'Medical',
                         'nc': 'nc',
-                        'd1': 'd1'}
+                        'd1': 'Technical'}
 
 # Read config
 parser = ConfigParser()

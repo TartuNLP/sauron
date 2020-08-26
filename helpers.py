@@ -43,7 +43,7 @@ class Error(Exception):
 
 
 def tokenize(text):
-    sentences = tuple(filter(str.strip, text.split('|')))
+    sentences = tuple(text.split('|'))  #(filter(str.strip, text.split('|')))
     return sentences
 
 def is_json(myjson):
