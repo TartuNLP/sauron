@@ -68,6 +68,9 @@ instance/
 # Scrapy stuff:
 .scrapy
 
+config.json
+dev.ini
+
 # Sphinx documentation
 docs/_build/
 
@@ -100,6 +103,9 @@ celerybeat.pid
 
 # SageMath parsed files
 *.sage.py
+
+# IDE
+.idea
 
 # Environments
 .env
