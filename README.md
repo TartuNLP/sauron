@@ -72,7 +72,13 @@ POST http://translate.cloud.ut.ee/v1.2/translate?auth=public
 
 #### Configuration:
 
- API requires configuration files for execution. Examples of __config.json__ and __dev.ini__ are provided in this repository.  
+API requires two configuration files for execution:
+
+__config.json__ contains a list of domains with their names and a corresponding list of translation engines that share the same set of supported factors like output style and language. Each of these workers has its name and two settings: IP address and port.
+
+__dev.ini__ specifies a mapping from the authentification key to the domain in which translation is expected. In the example, the second line says that users with authentification key *public* will be directed to the general domain.
+ 
+ Examples of __config.json__ and __dev.ini__ are provided in this repository.  
   
  Running from command line: 
  
