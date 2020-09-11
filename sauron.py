@@ -39,6 +39,7 @@ import sys
 import random
 import traceback
 from flask import Flask, request, jsonify, redirect
+from flask_cors import CORS
 from nltk import sent_tokenize
 from multiprocessing import Process, Manager, Queue, Condition, current_process
 from threading import Thread, Lock
@@ -49,7 +50,7 @@ from helpers import UUIDConverter, ThreadSafeDict, Error
 from helpers import is_json, tokenize
 
 app = Flask(__name__)
-
+CORS(app)
 
 @app.errorhandler(Error)
 def handle_invalid_usage(error):
@@ -532,6 +533,7 @@ class Worker(Process):
 
                 finally:
                     self.socket.close()
+                    self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def run(self) -> None:
         """Start worker sub-threads with distributed shared resource.
@@ -595,7 +597,7 @@ odomain_code_mapping = {'fml': 'Formal',
 # Read config
 parser = ConfigParser()
 parser.read('./dev.ini')
-with open('./config.json') as config_file:
+with open('config.json') as config_file:
     config = json.load(config_file)
 
 # Start workers
