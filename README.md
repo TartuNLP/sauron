@@ -92,7 +92,7 @@ __dev.ini__ specifies a mapping from the authentification key to the domain in w
 
 #### Deploying: 
 
-One option is to deploy the app with [gunicorn](https://gunicorn.org/) and GNU screen session. To support start, stop and restart commands one can add these lines to the .bash_aliases:
+One option is to deploy the app with [gunicorn](https://gunicorn.org/) and [GNU screen ](https://www.gnu.org/software/screen/manual/screen.html#Overview) session. To support start, stop and restart commands one can add these lines to the .bash_aliases:
 
 ```
 alias sauron-start='cd project/directory && screen -S sauron sudo gunicorn3 [OPTIONS] && cd ~'
