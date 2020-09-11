@@ -92,7 +92,7 @@ __dev.ini__ specifies a mapping from the authentification key to the domain in w
 
 Running in GNU screen session:
 
-To support start, stop and restart commands one can add these lines to .bash_aliases
+To support start, stop and restart commands one can add these lines to the .bash_aliases
 ```
 alias sauron-start='cd project/directory && screen -S sauron sudo gunicorn3 [OPTIONS] && cd ~'
 alias sauron-stop='ps aux |grep gunicorn |grep sauron | awk '"'"'{ print $2 }'"'"' | sudo xargs kill -s QUIT'
