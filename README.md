@@ -83,12 +83,21 @@ __dev.ini__ specifies a mapping from the authentification key to the domain in w
  Running from command line: 
  
  Unix Bash  
- `$ export FLASK_APP=api`  
+ `$ export FLASK_APP=sauron`  
  `$ flask run` 
  
  Windows CMD  
- `> set FLASK_APP=api`  
+ `> set FLASK_APP=sauron`  
 `> flask run`
- 
+
+Running in GNU screen session:
+
+To support start, stop and restart commands one can add these lines to .bash_aliases
+```
+alias sauron-start='cd project/directory && screen -S sauron sudo gunicorn3 [OPTIONS] && cd ~'
+alias sauron-stop='ps aux |grep gunicorn |grep sauron | awk '"'"'{ print $2 }'"'"' | sudo xargs kill -s QUIT'
+alias sauron-restart='sauron-stop && sauron-start'
+
+```
 
  
