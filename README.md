@@ -68,7 +68,7 @@ POST http://translate.cloud.ut.ee/v1.2/translate?auth=public
 
 #### Requirements:
 
-`> requirements.txt
+pip install -r requirements.txt
 
 #### Configuration:
 
