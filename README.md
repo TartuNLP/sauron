@@ -68,7 +68,7 @@ POST http://translate.cloud.ut.ee/v1.2/translate?auth=public
 
 #### Requirements:
 
-`pip3 install flask nltk`
+`-> requirements.txt
 
 #### Configuration:
 
