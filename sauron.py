@@ -29,7 +29,6 @@ Attributes:
     RESULTS ('multiprocessing.managers.DictProxy'):
         Stores the result for every job id
 """
-
 import logging
 import time
 import uuid
@@ -41,8 +40,8 @@ import traceback
 from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
 from nltk import sent_tokenize
-from multiprocessing import Process, Manager, Queue, Condition, current_process
-from threading import Thread, Lock
+from multiprocessing import Process, Manager, Queue, current_process
+from threading import Thread, Lock, Condition, Event
 from configparser import ConfigParser
 from itertools import product
 from copy import copy
@@ -82,7 +81,7 @@ def check_options():
     Returns:
         JSON: contains domain name,
         languages and output domain provided for the translation
-        
+
     Raises:
         [401] Authentication error
     """
@@ -113,7 +112,7 @@ def post_job():
     Returns:
         JSON: Contains response status, input text,
         result or error message.
-        
+
     Raises:
         [400] Obligatory parameter not in request error
         [400] Text is not included error
@@ -234,26 +233,26 @@ def post_job():
         RESULTS[job_id]['text'] = ''
         RESULTS[job_id]['segments'] = manager.list()
         RESULTS[job_id]['type'] = t
+        RESULTS[job_id]['avail'] = manager.Event()
         q[domain].put((job_id, params_str, sentences))
         app.logger.debug(f'Job with id {job_id} POSTED to the {domain} queue')
         app.logger.debug(f'{q[domain].qsize()} jobs in the {domain} queue')
 
     # Wait until results are updated
-    while True:
-        if job_id in RESULTS:
-            if RESULTS[job_id]['status'] == 'done':
-                if RESULTS[job_id]['type'] == 'sentences':
-                    response = jsonify({'status': 'done', 'input': body,
-                                        'result': list(RESULTS[job_id]['segments'])})
-                    return response
-                response = jsonify({'status': 'done', 'input': body, 'result': RESULTS[job_id]['text']})
-                return response
-            if RESULTS[job_id]['status'].startswith('fail'):
-                response = jsonify({'status': RESULTS[job_id]['status'],
-                                    'input': body,
-                                    'message': RESULTS[job_id]['message']})
-                return response
+    RESULTS[job_id]['avail'].wait()
 
+    # Prepare response
+    if RESULTS[job_id]['status'] == 'done':
+        if RESULTS[job_id]['type'] == 'sentences':
+            response = jsonify({'status': 'done', 'input': body,
+                                'result': list(RESULTS[job_id]['segments'])})
+        else:
+            response = jsonify({'status': 'done', 'input': body, 'result': RESULTS[job_id]['text']})
+    elif RESULTS[job_id]['status'].startswith('fail'):
+        response = jsonify({'status': RESULTS[job_id]['status'],
+                            'input': body,
+                            'message': RESULTS[job_id]['message']})
+    return response
 
 class Worker(Process):
     """Performs unique connection to the Nazgul instance.
@@ -289,7 +288,7 @@ class Worker(Process):
         self.options = dict()
         self.requests = ThreadSafeDict()
         self.lock = Lock()
-        self.c = Condition()
+        self.condition = Condition()
         self.ready = False
 
         # Create buffer for processing requests
@@ -327,34 +326,34 @@ class Worker(Process):
         """
 
         while True:
-            if not self.queue.empty():
-                job_id, params_str, src = self.queue.get()
-                l = len(src)
-                with self.requests as r:
-                    for s, sentence in enumerate(src):
-                        with self.c:
-                            # Wait until buffer is not overloaded
-                            while not r[params_str]['n_sentences'] < batch_size:
-                                self.c.wait()
-                            self.ready = False
-                            # Extend given text with a new sentence and sep token
-                            if sentence.strip():
-                                r[params_str]['text'] += sentence + '|'
-                            else:
-                                r[params_str]['text'] += ' |'
-                            # Keep number of sentences in the buffer
-                            r[params_str]['n_sentences'] += 1
-                            # And their job ids
-                            # to combine chunks for every request afterwards
-                            r[params_str]['job_ids'].put(job_id)
-                            # Continue if buffer has some capacity left
-                            # and last sentence in request is not reached yet
-                            if (r[params_str]['n_sentences'] < batch_size) and (s < l-1):
-                                continue
-                            # Otherwise notify translation threads
-                            else:
-                                self.ready = True
-                                self.c.notify_all()
+            #if not self.queue.empty():
+            job_id, params_str, src = self.queue.get(block=True)
+            l = len(src)
+            with self.requests as r:
+                for s, sentence in enumerate(src):
+                    with self.condition:
+                        # Wait until buffer is not overloaded
+                        while not r[params_str]['n_sentences'] < batch_size:
+                            self.condition.wait()
+                        self.ready = False
+                        # Extend given text with a new sentence and sep token
+                        if sentence.strip():
+                            r[params_str]['text'] += sentence + '|'
+                        else:
+                            r[params_str]['text'] += ' |'
+                        # Keep number of sentences in the buffer
+                        r[params_str]['n_sentences'] += 1
+                        # And their job ids
+                        # to combine chunks for every request afterwards
+                        r[params_str]['job_ids'].put(job_id)
+                        # Continue if buffer has some capacity left
+                        # and last sentence in request is not reached yet
+                        if (r[params_str]['n_sentences'] < batch_size) and (s < l-1):
+                            continue
+                        # Otherwise notify translation threads
+                        else:
+                            self.ready = True
+                            self.condition.notify_all()
 
     def send_request(self, text: str, olang: str, odomain: str) -> tuple:
         """Send prepared batch for translation.
@@ -426,10 +425,10 @@ class Worker(Process):
         olang = lang_code_mapping[olang]
 
         while True:
-            with self.c:
+            with self.condition:
                 # Wait until producing thread finishes filling batch
                 while not self.ready:
-                    self.c.wait()
+                    self.condition.wait()
                 # Check whether any text arrived
                 # if so get the text and refresh the buffer
                 with requests as r:
@@ -439,7 +438,7 @@ class Worker(Process):
                         itr = iter(r['job_ids'].get, None)
                         r['n_sentences'] = 0
                         r['text'] = ''
-                        self.c.notify_all()
+                        self.condition.notify_all()
             if text:
                 # Translation actually happens here
                 responses = self.send_request(text, olang, odomain)
@@ -448,6 +447,10 @@ class Worker(Process):
                 # Need to assign chunks to respective jobs
                 self.save_result(responses, itr)
                 del text
+            else:
+                with self.condition:
+                    self.condition.wait()
+
 
     @staticmethod
     def save_result(responses: tuple, itr: iter) -> None:
@@ -476,6 +479,7 @@ class Worker(Process):
                     RESULTS[j]['status'] = 'fail'
                 if RESULTS[j]['n_sen'] <= len(RESULTS[j]['segments']):
                     RESULTS[j]['status'] = 'done'
+                    RESULTS[j]['avail'].set()
 
     def check_connection(self, check_every: int = None) -> None:
         """Update server availability status.
@@ -618,3 +622,6 @@ for _, domains in config.items():
 
 if __name__ == '__main__':
     app.run()
+
+
+
