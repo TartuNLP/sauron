@@ -583,7 +583,7 @@ manager = Manager()
 RESULTS = manager.dict()
 status = manager.dict()
 req_params = ('src', 'auth', 'olang', 'odomain')
-lang_code_mapping = {'est': 'et', 'lav': 'lv', 'eng': 'en', 'rus': 'ru', 'fin': 'fi', 'lit': 'lt', 'ger': 'de'}
+lang_code_mapping = {'est': 'et', 'lav': 'lv', 'eng': 'en', 'rus': 'ru', 'fin': 'fi', 'lit': 'lt', 'ger': 'de', 'sma':'sma', 'sme':'sme', 'vro':'vro'}
 odomain_code_mapping = {'fml': 'Formal',
                         'inf': 'Informal',
                         'auto': 'Auto',
