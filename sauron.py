@@ -346,7 +346,6 @@ class Worker(Process):
         """
 
         while True:
-            # if not self.queue.empty():
             job_id, params_str, src = self.queue.get(block=True)
             l = len(src)
             with self.requests as r:
@@ -458,7 +457,6 @@ class Worker(Process):
                         r['n_sentences'] = 0
                         r['text'] = ''
                         self.condition.notify_all()
-            # bug (does not go into wait because self.ready is True)
             if text:
                 # Translation actually happens here
                 responses = self.send_request(text, olang, odomain)
@@ -617,7 +615,7 @@ def load_config(dir):
                 assert (c not in v_seen), f'"{c}" is not a unique value in language code mapping'
                 v_seen.add(c)
                 assert (c not in k_seen) or (c == k),\
-                    f'Keys of the mapping should appear as a value for another pair.\n' \
+                    f'Keys of the mapping should not appear as a value for another pair.\n' \
                     f'("{c}" is the key and the value at the same time)'
 
     def check_output_options(conf):
