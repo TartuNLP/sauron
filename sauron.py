@@ -610,39 +610,44 @@ def load_config(file_dir):
         return lang_map
 
     def check_lang_map(conf):
-        """Test config correctness"""
-
-        k_seen, v_seen = set(), set()
-        for k, v in conf.items():
-            k_seen.add(k)
-            for c in v:
-                assert (c not in v_seen), f'"{c}" is not a unique value in language code mapping'
-                v_seen.add(c)
-                assert (c not in k_seen) or (c == k),\
-                    f'Keys of the mapping should not appear as a value for another pair.\n' \
-                    f'("{c}" is the key and the value at the same time)'
+        """Test language mapping correctness"""
+        lcm = parse_duplicates(conf)
+        if lcm:
+            k_seen, v_seen = set(), set()
+            for k, v in lcm.items():
+                k_seen.add(k)
+                for c in v:
+                    assert (c not in v_seen), f'"{c}" is not a unique value in language code mapping'
+                    v_seen.add(c)
+                    assert (c not in k_seen) or (c == k),\
+                        f'Keys of the mapping should not appear as a value for another pair.\n' \
+                        f'("{c}" is the key and the value at the same time)'
+        return lcm
 
     def check_output_options(conf):
+        """Test output options correctness"""
         for dom in conf['domains']:
             for d, langs in dom['output_options'].items():
-                assert d in conf['domain_code_map'], f'Domain mapping is missing for "{d}"'
                 langs = langs.split(',')
                 for l in langs:
                     assert (l in conf['lang_code_map']) or (pycountry.countries.get(alpha_3=l.upper())), \
                         f'Language code for "{l}" is not found'
+        # Add missing domain name mapping
+        dcm = {
+            d: (d if d not in conf_dict['domain_code_map'] else conf_dict['domain_code_map'][d])
+            for dom in conf_dict['domains']
+            for d, langs in dom['output_options'].items()
+        }
+        return dcm
 
     conf_dict, conf_pairs = read_config(file_dir)
-    conf_domains = conf_dict['domains']
-    l_code_map = parse_duplicates(conf_pairs)
-    if l_code_map:
-        check_lang_map(conf=l_code_map)
-    check_output_options(conf=conf_dict)
-    d_code_map = conf_dict['domains']
+    l_code_map = check_lang_map(conf=conf_pairs)
+    d_code_map = check_output_options(conf=conf_dict)
 
     # (!) Values of the config lang mapping has to be unique
     r_lang_map = {c: k for k, v in l_code_map.items() for c in v}
 
-    return conf_domains, d_code_map, l_code_map, r_lang_map
+    return conf_dict['domains'], d_code_map, l_code_map, r_lang_map
 
 
 # Add hoc settings
@@ -668,7 +673,7 @@ req_params = ('src', 'auth', 'olang', 'odomain')
 # Load settings from config
 parser = ConfigParser()
 parser.read('./dev.ini')
-with open('config_local.json') as config_file:
+with open('config.json') as config_file:
     config = json.load(config_file)
 
 
