@@ -1,4 +1,21 @@
 {
+  "lang_code_map":
+  {
+    "est": ["et"],
+    "lav": ["lv"],
+    "eng": ["en"],
+    "fin": ["fi"],
+    "lit": ["lt"],
+    "ger": ["de"],
+    "sma": ["sma"],
+    "vro": ["vro"]
+  },
+  "domain_code_map":
+  {
+    "fml": "Formal",
+    "inf": "Informal",
+    "auto": "Auto"
+  },
   "domains": [
     {
       "name" : "domain1",
@@ -40,7 +57,7 @@
         }
       ],
       "output_options" : {
-        "tt": "ger,est,lav,lit"
+        "inf": "ger,est,lav,lit"
       }
     },
     {
@@ -56,7 +73,7 @@
         }
       ],
       "output_options" : {
-        "cr": "ger,eng,est,lav"
+        "auto": "ger,eng,est,lav"
       }
     }
   ]

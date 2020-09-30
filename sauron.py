@@ -16,9 +16,9 @@ Attributes:
         Specifies expected request parameters
     connections (dict):
         Dictionary of worker instances
-    lang_code_mapping (dict):
+    lang_code_map (dict):
         3-letter to 2-letter language code mapping
-    odomain_code_mapping (dict):
+    domain_code_map (dict):
         Output domain code to name mapping
     queues_per_domain (helpers.ThreadSafeDict):
         Dictionary of queues for the main process
@@ -29,6 +29,8 @@ Attributes:
     RESULTS ('multiprocessing.managers.DictProxy'):
         Stores the result for every job id
 """
+
+import pycountry
 import logging
 import time
 import uuid
@@ -41,15 +43,17 @@ from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
 from nltk import sent_tokenize
 from multiprocessing import Process, Manager, Queue, current_process
-from threading import Thread, Lock, Condition, Event
+from threading import Thread, Lock, Condition
 from configparser import ConfigParser
 from itertools import product
+from collections import OrderedDict
 from copy import copy
 from helpers import UUIDConverter, ThreadSafeDict, Error
 from helpers import is_json, tokenize
 
 app = Flask(__name__)
 CORS(app)
+
 
 @app.errorhandler(Error)
 def handle_invalid_usage(error):
@@ -88,11 +92,11 @@ def check_options():
 
     auth = request.args.get('auth')
     if auth in parser.options('token2domain'):
-        domain = parser.get('token2domain', auth)
-        for name, c in connections.items():
-            if name.startswith(domain):
+        auth_domain = parser.get('token2domain', auth)
+        for worker_name, c in connections.items():
+            if worker_name.startswith(auth_domain):
                 std_fmt = [{"odomain": option,
-                            "name": odomain_code_mapping[option],
+                            "name": domain_code_map[option],
                             "lang": c.options[option]} for option in c.options]
                 return jsonify({"domain": c.name.split('_')[0], "options": std_fmt})
     else:
@@ -134,7 +138,7 @@ def post_job():
 
     # Try get domain corresponding to the auth key
     if querry['auth'] in parser.options('token2domain'):
-        domain = parser.get('token2domain', querry['auth'])
+        auth_domain = parser.get('token2domain', querry['auth'])
     else:
         raise Error(f'Authentication failed', payload={'status': 'fail'}, status_code=401)
 
@@ -175,47 +179,69 @@ def post_job():
             t = 'raw'
 
     # Verify validity of arguments and capability of handling request
-    available_servers = False
-    for name, c in connections.items():
-        if name.startswith(domain):
+    lang = querry['olang']
+    '''
+    
+    Look for language 2;3 -letter mappings.
+    Any letter case is allowed.
+    Assumes that languages that are not in custom code mapping
+    written to the config output_options field as alpha_3 ISO code.
+    Keys and values of the map have to be unique.
+    Non-standard lang codes on nazgul side corresponds to the left side of mapping.
+    List of preferred code alternatives for end user is on the right side of the mapping.
+    '''
+
+    c2 = pycountry.countries.get(alpha_2=lang.upper())
+    c3 = pycountry.countries.get(alpha_3=lang.upper())
+    lang = lang.lower()
+    if lang in lang_code_map:
+        pass
+    elif lang in reversed_lang_map:
+        lang = copy(reversed_lang_map[lang])
+    elif c3:
+        lang = c3.alpha_3.lower()
+    elif c2:
+        lang = pycountry.countries.get(alpha_2=c2.alpha_2).alpha_3.lower()
+    else:
+        raise Error(f'Language code is not found', payload={'status': 'fail'}, status_code=400)
+
+    odomain = querry['odomain']
+    # Check whether expected backend reachable
+    avail_workers = {worker_name: c for (worker_name, c) in connections.items()
+                     if (worker_name.startswith(auth_domain)) and status[worker_name]}
+    selected_worker = None
+    if avail_workers:
+        for worker_name, connection in avail_workers.items():
             # If requested output domain is not in the supported list
             # for current worker allocate first as such
-            if querry['odomain'] not in c.options:
-                available_odomains = list(c.options)
-                querry['odomain'] = available_odomains[0]
-            options = c.options[querry['odomain']]
-            # Look for language 2;3 -letter mappings
-            if querry['olang'] not in options:
-                reverse_lang_mapping = {v: k for k, v in lang_code_mapping.items()}
-                if querry['olang'] not in [lang_code_mapping[lang] for lang in options]:
-                    raise Error(f'Language is not supported', payload={'status': 'fail'}, status_code=400)
-                # Still translate function waits for 3-letter code
-                querry['olang'] = reverse_lang_mapping[querry['olang']]
-            # Check whether expected backend reachable
-            if status[name]:
-                available_servers = True
-    if not available_servers:
-        raise Error(f'Server for {domain} domain is not connected', status_code=503,
+            if odomain not in connection.options:
+                available_odomains = list(connection.options)
+                odomain = available_odomains[0]
+            if lang in connection.options[odomain]:
+                selected_worker = avail_workers[worker_name]
+                break
+    else:
+        raise Error(f'Server for {auth_domain} domain is not connected', status_code=503,
                     payload={'status': 'fail', 'input': body})
+    if not selected_worker:
+        raise Error(f'Language "{lang}" is not supported', payload={'status': 'fail'}, status_code=400)
 
     # Get rid of separator from the original text
     # to avoid further conflicts with tokenizer
-    delete_symbol = lambda body: ''.join(c for c in body if c not in '|')
-
+    def delete_symbols(text, symbols='|'):
+        return ''.join(c for c in text if c not in symbols)
 
     # Delete depends on input type
     if t in ['src', 'text', 'raw']:
-        body = delete_symbol(body)
+        body = delete_symbols(body)
         sentences = sent_tokenize(body)
     else:
-        body = list(map(delete_symbol, body))
+        body = list(map(delete_symbols, body))
         sentences = body
 
-
     n_sentences = len(sentences)
-    params_str = '{}_{}'.format(querry['olang'], querry['odomain'])
+    params_str = '{}_{}'.format(lang, odomain)
     job_id = uuid.uuid1()
-
 
     if not sentences:
         return jsonify({'status': 'done', 'input': body,
@@ -223,7 +249,6 @@ def post_job():
     if not sum([True for s in sentences if s.strip()]):
         return jsonify({'status': 'done', 'input': body,
                         'result': sentences})
-
 
     # Pass parameters further to the queue manager
     with queues_per_domain as q:
@@ -234,9 +259,9 @@ def post_job():
         RESULTS[job_id]['segments'] = manager.list()
         RESULTS[job_id]['type'] = t
         RESULTS[job_id]['avail'] = manager.Event()
-        q[domain].put((job_id, params_str, sentences))
+        q[auth_domain].put((job_id, params_str, sentences))
         app.logger.debug(f'Job with id {job_id} POSTED to the {domain} queue')
-        app.logger.debug(f'{q[domain].qsize()} jobs in the {domain} queue')
+        app.logger.debug(f'{q[auth_domain].qsize()} jobs in the {domain} queue')
 
     # Wait until results are updated
     RESULTS[job_id]['avail'].wait()
@@ -254,6 +279,7 @@ def post_job():
                             'message': RESULTS[job_id]['message']})
     return response
 
+
 class Worker(Process):
     """Performs unique connection to the Nazgul instance.
 
@@ -266,13 +292,13 @@ class Worker(Process):
         options: Worker configuration
         requests: Buffer for accumulating similar requests
         lock: Threading lock
-        c: Threading condition
+        condition: Threading condition
         ready: Boolean status of producing thread
         prod: List of all parameters combinations
     """
 
     def __init__(self,
-                 name: str,
+                 worker_name: str,
                  request_queue: Queue,
                  host: str,
                  port: int,
@@ -280,7 +306,7 @@ class Worker(Process):
 
         super(Worker, self).__init__(name=name)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.name = name
+        self.name = worker_name
         self.connected = False
         self.queue = request_queue
         self.host = host
@@ -326,9 +352,8 @@ class Worker(Process):
         """
 
         while True:
-            #if not self.queue.empty():
             job_id, params_str, src = self.queue.get(block=True)
-            l = len(src)
+            n_sent = len(src)
             with self.requests as r:
                 for s, sentence in enumerate(src):
                     with self.condition:
@@ -348,7 +373,7 @@ class Worker(Process):
                         r[params_str]['job_ids'].put(job_id)
                         # Continue if buffer has some capacity left
                         # and last sentence in request is not reached yet
-                        if (r[params_str]['n_sentences'] < batch_size) and (s < l-1):
+                        if (r[params_str]['n_sentences'] < batch_size) and (s < n_sent-1):
                             continue
                         # Otherwise notify translation threads
                         else:
@@ -408,7 +433,7 @@ class Worker(Process):
                 except Exception:
                     return False, traceback.format_exc()
                 finally:
-                    sock.close() # return tuple?
+                    sock.close()  # return tuple?
 
     def translate(self, params_str: str, requests: ThreadSafeDict) -> None:
         """Continuously get translation for the text from the allocated buffer.
@@ -422,7 +447,6 @@ class Worker(Process):
         """
 
         olang, odomain = params_str.split('_')
-        olang = lang_code_mapping[olang]
 
         while True:
             with self.condition:
@@ -451,7 +475,6 @@ class Worker(Process):
                 with self.condition:
                     self.condition.wait()
 
-
     @staticmethod
     def save_result(responses: tuple, itr: iter) -> None:
         """Put translated text into result.
@@ -463,8 +486,6 @@ class Worker(Process):
         Returns:
             None
         """
-
-
         for i, j in enumerate(itr):
             if type(responses[0]) is bool:
                 RESULTS[j]['message'] = responses[1:]
@@ -567,6 +588,68 @@ class Worker(Process):
                 t.join()
 
 
+def load_config(file_dir):
+    def read_config(file_d):
+        with open(file_d) as config_f:
+            conf_basic = json.load(config_f)
+        with open(file_d) as config_f:
+            conf_custom = json.load(config_f, object_pairs_hook=lambda x: x)
+        return conf_basic, conf_custom
+
+    def parse_duplicates(conf):
+        """Take care of duplicate keys"""
+
+        lang_map = OrderedDict()
+        for key, value in conf:
+            if key == 'lang_code_map':
+                for src, tgt in value:
+                    if src not in lang_map:
+                        lang_map[src] = tgt
+                    else:
+                        lang_map[src].extend(tgt)
+        return lang_map
+
+    def check_lang_map(conf):
+        """Test language mapping correctness"""
+        lcm = parse_duplicates(conf)
+        if lcm:
+            k_seen, v_seen = set(), set()
+            for k, v in lcm.items():
+                k_seen.add(k)
+                for c in v:
+                    assert (c not in v_seen), f'"{c}" is not a unique value in language code mapping'
+                    v_seen.add(c)
+                    assert (c not in k_seen) or (c == k),\
+                        f'Keys of the mapping should not appear as a value for another pair.\n' \
+                        f'("{c}" is the key and the value at the same time)'
+        return lcm
+
+    def check_output_options(conf):
+        """Test output options correctness"""
+        for dom in conf['domains']:
+            for d, langs in dom['output_options'].items():
+                langs = langs.split(',')
+                for l in langs:
+                    assert (l in conf['lang_code_map']) or (pycountry.countries.get(alpha_3=l.upper())), \
+                        f'Language code for "{l}" is not found'
+        # Add missing domain name mapping
+        dcm = {
+            d: (d if d not in conf_dict['domain_code_map'] else conf_dict['domain_code_map'][d])
+            for dom in conf_dict['domains']
+            for d, langs in dom['output_options'].items()
+        }
+        return dcm
+
+    conf_dict, conf_pairs = read_config(file_dir)
+    l_code_map = check_lang_map(conf=conf_pairs)
+    d_code_map = check_output_options(conf=conf_dict)
+
+    # (!) Values of the config lang mapping has to be unique
+    r_lang_map = {c: k for k, v in l_code_map.items() for c in v}
+
+    return conf_dict['domains'], d_code_map, l_code_map, r_lang_map
+
+
 # Add hoc settings
 app.url_map.converters['uuid'] = UUIDConverter
 app.config['JSON_SORT_KEYS'] = False
@@ -576,6 +659,9 @@ gunicorn_logger = logging.getLogger('gunicorn.error')
 app.logger.handlers.extend(gunicorn_logger.handlers)
 app.logger.setLevel(gunicorn_logger.level)
 
+# Check correctness of config
+domains, domain_code_map, lang_code_map, reversed_lang_map = load_config('config_local.json')
+
 # Set global variables
 queues_per_domain = ThreadSafeDict()
 connections = dict()
@@ -583,45 +669,27 @@ manager = Manager()
 RESULTS = manager.dict()
 status = manager.dict()
 req_params = ('src', 'auth', 'olang', 'odomain')
-lang_code_mapping = {'est': 'et', 'lav': 'lv', 'eng': 'en', 'rus': 'ru', 'fin': 'fi', 'lit': 'lt', 'ger': 'de', 'sma':'sma', 'sme':'sme', 'vro':'vro'}
-odomain_code_mapping = {'fml': 'Formal',
-                        'inf': 'Informal',
-                        'auto': 'Auto',
-                        'tt': 'tt',
-                        'cr': 'cr',
-                        'ep': 'European Parliament',
-                        'os': 'Informal',
-                        'pc': 'Auto',
-                        'dg': 'dg',
-                        'jr': 'Legal',
-                        'em': 'Medical',
-                        'nc': 'nc',
-                        'd1': 'Technical'}
 
-# Read config
+# Load settings from config
 parser = ConfigParser()
 parser.read('./dev.ini')
 with open('config.json') as config_file:
     config = json.load(config_file)
 
+
 # Start workers
-for _, domains in config.items():
-    for domain in domains:
-        queues_per_domain[domain['name']] = Queue()
-        engines = domain['Workers']
-        for worker in engines:
-            domain_name = domain['name']
-            worker_name = worker['name']
-            name = f'{domain_name}_{worker_name}'
-            worker['settings']['output_options'] = domain['output_options']
-            w = Worker(name, queues_per_domain[domain_name], **worker['settings'])
-            connections[name] = w
-            status[name] = False
-            w.start()
+for domain in domains:
+    domain_name = domain['name']
+    queues_per_domain[domain_name] = Queue()
+    engines = domain['Workers']
+    for worker in engines:
+        name = f"{domain_name}_{worker['name']}"
+        worker['settings']['output_options'] = domain['output_options']
+        w = Worker(name, queues_per_domain[domain_name], **worker['settings'])
+        connections[name] = w
+        status[name] = False
+        w.start()
 
 
 if __name__ == '__main__':
     app.run()
-
-
-
