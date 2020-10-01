@@ -11,7 +11,7 @@ Request parameters :
  - olang
  
 
-POST http://translate.cloud.ut.ee/v1.2/translate?auth=public&olang=eng&odomain=auto  
+POST https://api.tartunlp.ai/v1.2/translate?auth=public&olang=eng&odomain=auto  
 BODY (JSON):
 
     {
@@ -30,7 +30,7 @@ RESPONSE (JSON):
 
 #### Translation (multiple sentences):
 
-POST https://translate.cloud.ut.ee/v1.2/translate?auth=public&olang=eng&odomain=auto  
+POST https://api.tartunlp.ai/v1.2/translate?auth=public&olang=eng&odomain=auto  
 BODY (JSON):
 
         {
@@ -49,7 +49,7 @@ RESPONSE (JSON):
 
 #### Get help on domain settings:  
 
-GET/ POST http://translate.cloud.ut.ee/v1.2/translate/support?auth=public
+GET/ POST https://api.tartunlp.ai/v1.2/translate/support?auth=public
 
 ```json
 {"domain":"general","options":[{"odomain":"fml","name":"Formal","lang":["est","lav","lit","ger","eng","fin","rus"]},{"odomain":"inf","name":"Informal","lang":["est","lav","lit","ger","eng","fin","rus"]},{"odomain":"auto","name":"Auto","lang":["est","lav","lit","ger","eng","fin","rus"]}]}
@@ -58,7 +58,7 @@ GET/ POST http://translate.cloud.ut.ee/v1.2/translate/support?auth=public
 
 You may also receieve a message. For example when incorrect usage is found:  
 
-POST http://translate.cloud.ut.ee/v1.2/translate?auth=public
+POST https://api.tartunlp.ai/v1.2/translate?auth=public
 
 ```json
 {
